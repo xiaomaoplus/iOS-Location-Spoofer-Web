@@ -824,12 +824,11 @@
       headers["X-Location-Spoofer-Wifi"] = String(wifiCount);
       headers["X-Location-Spoofer-Cell"] = String(cellCount);
 
+      // Shadowrocket response-body rewrites expect the rewritten response
+      // fields at the top level. A nested `response` object is ignored.
       $done({
-        response: {
-          status: 200,
-          headers: headers,
-          body: bodyBytes
-        }
+        headers: headers,
+        body: bodyBytes
       });
     }
 
