@@ -1210,10 +1210,10 @@ function updateStatus(){
   var same=Math.abs(WGS.lat-lockedWGS.lat)<0.00001&&Math.abs(WGS.lng-lockedWGS.lng)<0.00001;
   if(same){
     elStatusDot.className='status-dot saved';
-    elStatusText.textContent='已锁定 · '+WGS.lat.toFixed(4)+', '+WGS.lng.toFixed(4);
+    elStatusText.textContent='已保存 · '+WGS.lat.toFixed(4)+', '+WGS.lng.toFixed(4);
   }else{
     elStatusDot.className='status-dot unsaved';
-    elStatusText.textContent='位置已移动，点「锁定」生效';
+    elStatusText.textContent='位置已移动，点「锁定」保存';
   }
 }
 
@@ -1421,9 +1421,9 @@ function doSearch(){
         }
         a.forEach(function(it){
           var row=document.createElement('div');row.className='result-row';
-          var parts=it.display_name.split(',');
-          row.innerHTML='<div class="name">'+parts[0]+'</div>'
-                       +'<div class="sub">'+parts.slice(1,3).join(',')+'</div>';
+          var parts=String(it.display_name || '').split(',');
+          row.innerHTML='<div class="name">'+escHtml(parts[0])+'</div>'
+                       +'<div class="sub">'+escHtml(parts.slice(1,3).join(','))+'</div>';
           row.addEventListener('click',function(){
             var wLat=+it.lat,wLng=+it.lon;
             var disp=(currentLayer==='osm'||currentLayer==='esri')?[wLat,wLng]:GCJ.w2g(wLat,wLng);
@@ -1453,7 +1453,11 @@ document.addEventListener('click',function(e){
 });
 
 /* ─── Lock location ──────────────────────────────────────── */
+var savingLocation=false;
 function lockLocation(){
+  if(savingLocation)return;
+  savingLocation=true;
+  elBtnLock.disabled=true;
   elBtnLock.classList.add('locking');
   elBtnLockLabel.textContent='保存中…';
 
@@ -1463,9 +1467,9 @@ function lockLocation(){
 
   var payload={
     latitude:WGS.lat,longitude:WGS.lng,
-    altitude:altVal||0,
-    horizontalAccuracy:haccVal||39,
-    verticalAccuracy:vaccVal||1000
+    altitude:altVal == null ? 0 : altVal,
+    horizontalAccuracy:haccVal,
+    verticalAccuracy:vaccVal
   };
   fetch(API('/set'),{
     method:'POST',
@@ -1473,15 +1477,20 @@ function lockLocation(){
     body:JSON.stringify(payload)
   }).then(function(r){
     if(!r.ok)throw new Error(r.status);
-    lockedWGS={lat:WGS.lat,lng:WGS.lng};
+    return r.json();
+  }).then(function(saved){
+    if(!validCoords(saved))throw new Error('Invalid saved location');
+    lockedWGS={lat:saved.latitude,lng:saved.longitude};
     $id('crosshair').classList.add('locked');
     setTimeout(function(){$id('crosshair').classList.remove('locked');},400);
-    toast('位置已锁定！请前往系统 定位服务 重新开关生效');
+    toast('坐标已保存；手机定位是否生效需另行验证');
     updateStatus();
-    updateLockedPin(WGS.lat,WGS.lng);
+    updateLockedPin(lockedWGS.lat,lockedWGS.lng);
   }).catch(function(){
     toast('保存失败，请检查网络或 Token');
   }).finally(function(){
+    savingLocation=false;
+    elBtnLock.disabled=false;
     elBtnLock.classList.remove('locking');
     elBtnLockLabel.textContent='锁定';
   });
@@ -1541,9 +1550,9 @@ drawer.addEventListener('touchend',function(e){
 /* ─── Favorites ──────────────────────────────────────────── */
 function loadFavorites(){
   fetch(API('/favorites'))
-    .then(function(r){return r.json();})
-    .then(function(a){favorites=a||[];renderFavorites();updateFavStar();})
-    .catch(function(){});
+    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json();})
+    .then(function(a){if(!Array.isArray(a))throw new Error('Invalid favorites');favorites=a.filter(validCoords);renderFavorites();updateFavStar();})
+    .catch(function(){toast('收藏夹加载失败');});
 }
 
 /* Update the bubble star icon: solid if current position is already a favorite */
@@ -1578,14 +1587,14 @@ function renderFavorites(){
         +'<div class="fav-name">'+escHtml(f.name)+'</div>'
         +'<div class="fav-coords">'+f.latitude.toFixed(5)+', '+f.longitude.toFixed(5)+'</div>'
       +'</div>'
-      +'<button class="fav-del" data-id="'+f.id+'">'
+      +'<button class="fav-del" data-id="'+escHtml(f.id)+'">'
         +'<svg viewBox="0 0 24 24" width="16" height="16" stroke="#FF453A" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>'
       +'</button>';
 
     // Jump to location on tap
     item.addEventListener('click',function(e){
       if(e.target.classList.contains('fav-del'))return;
-      var disp=currentLayer==='osm'?[f.latitude,f.longitude]:GCJ.w2g(f.latitude,f.longitude);
+      var disp=(currentLayer==='osm'||currentLayer==='esri')?[f.latitude,f.longitude]:GCJ.w2g(f.latitude,f.longitude);
       map.setView([disp[0],disp[1]],15,{animate:true});
       closeFavPanel();
     });
@@ -1601,13 +1610,13 @@ function renderFavorites(){
 }
 
 function deleteFavorite(id){
-  fetch(API('/favorites/'+id),{method:'DELETE'})
-    .then(function(){loadFavorites();toast('已删除');})
+  fetch(API('/favorites/'+encodeURIComponent(id)),{method:'DELETE'})
+    .then(function(r){if(!r.ok)throw new Error(r.status);loadFavorites();toast('已删除');})
     .catch(function(){toast('删除失败');});
 }
 
 function escHtml(s){
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 /* Favorites panel open/close */
@@ -1635,7 +1644,6 @@ $id('bubble-fav-btn').addEventListener('click', function(e){
   var existing=favorites.find(function(f){ return coordMatch(f, WGS); });
   if(existing){
     deleteFavorite(existing.id);
-    toast('已取消收藏');
   } else {
     showSaveModal();
   }
@@ -1650,7 +1658,7 @@ $id('btn-locate').addEventListener('click', function(e){
       var lng = pos.coords.longitude;
       var disp = (currentLayer === 'osm'||currentLayer === 'esri') ? [lat, lng] : GCJ.w2g(lat, lng);
       map.setView([disp[0], disp[1]], 16, {animate: true});
-      toast('已定位到当前真实位置');
+      toast('已定位到浏览器报告的位置');
     }, function(err) {
       toast('定位失败: ' + err.message);
     }, {enableHighAccuracy: true, timeout: 6000});
@@ -1682,7 +1690,7 @@ function saveFavorite(){
 
   var payload={
     name:name,latitude:WGS.lat,longitude:WGS.lng,
-    altitude:altVal||null,
+    altitude:altVal == null ? null : altVal,
     horizontalAccuracy:parseFloat($id('inp-hacc').value)||39,
     verticalAccuracy:parseFloat($id('inp-vacc').value)||1000
   };
@@ -1690,7 +1698,7 @@ function saveFavorite(){
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(payload)
-  }).then(function(r){return r.json();})
+  }).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();})
     .then(function(){
       $id('modal-backdrop').classList.remove('open');
       loadFavorites();
@@ -1828,11 +1836,7 @@ function showLoginScreen(onSuccess) {
 
 function handleAuthentication(onAuthenticated) {
   if (!HAS_TOKEN) {
-    // Open access, no token required on server
-    $id('login-overlay').style.display = 'none';
-    localStorage.removeItem('gps_token');
-    localStorage.removeItem('gps_session');
-    onAuthenticated('');
+    toast('服务未配置完成，请检查服务端 TOKEN 和 KV 绑定');
     return;
   }
   
@@ -1855,6 +1859,12 @@ function handleAuthentication(onAuthenticated) {
   }
 }
 
+function validCoords(d) {
+  return d && typeof d.latitude === 'number' && Number.isFinite(d.latitude) &&
+    Math.abs(d.latitude) <= 90 && typeof d.longitude === 'number' &&
+    Number.isFinite(d.longitude) && Math.abs(d.longitude) <= 180;
+}
+
 /* ─── Init: load current coords from server ─────────────── */
 handleAuthentication(function(activeToken) {
   // Update API URL helper with cached token dynamically
@@ -1864,11 +1874,12 @@ handleAuthentication(function(activeToken) {
   };
 
   fetch(API('/loc.json'))
-    .then(function(r){return r.json();})
+    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json();})
     .then(function(d){
-      WGS={lat:d.latitude||39.90872,lng:d.longitude||116.39748};
+      if(!validCoords(d))throw new Error('Invalid location');
+      WGS={lat:d.latitude,lng:d.longitude};
       lockedWGS={lat:WGS.lat,lng:WGS.lng};
-      altitude=d.altitude||null;
+      altitude=d.altitude == null ? null : d.altitude;
       hacc=d.horizontalAccuracy||39;
       vacc=d.verticalAccuracy||1000;
       $id('inp-hacc').placeholder=hacc;
@@ -1885,13 +1896,13 @@ handleAuthentication(function(activeToken) {
     .catch(function(){
       // fallback: Beijing
       initMap(39.90872,116.39748);
-      updateLockedPin(39.90872,116.39748);
+      lockedWGS=null;
       updateBubble();
       updateStatus();
       loadHistory();
       renderHistory();
       loadFavorites();
-      toast('无法连接服务器，请检查 Token');
+      toast('未能读取已保存坐标；请选点保存，或检查网络与服务配置');
     });
 });
 
