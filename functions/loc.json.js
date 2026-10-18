@@ -6,7 +6,7 @@
  * ⚠️【特别声明】：本项目完全免费开源，严禁以任何形式进行二次售卖、转售、商业收费代搭建！
  */
 
-import { validLocation, requireService, jsonResponse, errorResponse, corsHeaders } from './_utils.js';
+import { readStoredLocation, requireService, jsonResponse, errorResponse, corsHeaders } from './_utils.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
@@ -15,9 +15,10 @@ export async function onRequestGet(context) {
   if (unavailable) return unavailable;
 
   try {
-    const loc = await env.SPOOFER_DATA.get('loc', { type: 'json' });
-    if (!loc) return errorResponse('location not configured', 404);
-    if (!validLocation(loc)) return errorResponse('invalid stored location', 503);
+    const stored = await env.SPOOFER_DATA.get('loc', { type: 'json' });
+    if (!stored) return errorResponse('location not configured', 404);
+    const loc = readStoredLocation(stored);
+    if (!loc) return errorResponse('invalid stored location', 503);
     return jsonResponse(loc);
   } catch {
     return errorResponse('storage unavailable', 503);

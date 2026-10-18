@@ -6,7 +6,7 @@
  * ⚠️【特别声明】：本项目完全免费开源，严禁以任何形式进行二次售卖、转售、商业收费代搭建！
  */
 
-import { DEFAULT_LOC, validLocation, requireService, jsonResponse, errorResponse, corsHeaders } from './_utils.js';
+import { DEFAULT_LOC, validLocation, readStoredLocation, requireService, jsonResponse, errorResponse, corsHeaders } from './_utils.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -22,7 +22,7 @@ export async function onRequestPost(context) {
     if (!stored && (!Object.hasOwn(data, 'latitude') || !Object.hasOwn(data, 'longitude'))) {
       return errorResponse('initial location requires latitude and longitude');
     }
-    const current = stored || DEFAULT_LOC;
+    const current = stored ? readStoredLocation(stored) || stored : DEFAULT_LOC;
     const updated = { ...current };
     for (const key of Object.keys(DEFAULT_LOC)) {
       if (Object.hasOwn(data, key)) updated[key] = data[key];

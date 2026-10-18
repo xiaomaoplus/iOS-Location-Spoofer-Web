@@ -42,6 +42,20 @@ export function validLocation(data, partial = false) {
   });
 }
 
+// Legacy records may omit optional fields or contain accuracy=0, which older
+// clients silently replaced with defaults. Never substitute stored coordinates
+// and never write this compatibility normalization back to KV.
+export function readStoredLocation(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const loc = { latitude: data.latitude, longitude: data.longitude };
+  for (const key of ['altitude', 'horizontalAccuracy', 'verticalAccuracy']) {
+    const value = data[key];
+    loc[key] = typeof value === 'number' && Number.isFinite(value) &&
+      (key === 'altitude' || value > 0) ? value : DEFAULT_LOC[key];
+  }
+  return validLocation(loc) ? loc : null;
+}
+
 export function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
