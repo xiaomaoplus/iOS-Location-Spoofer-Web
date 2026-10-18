@@ -6,37 +6,32 @@
  * ⚠️【特别声明】：本项目完全免费开源，严禁以任何形式进行二次售卖、转售、商业收费代搭建！
  */
 
-import { DEFAULT_LOC, authOk, jsonResponse, errorResponse, corsHeaders } from './_utils.js';
+import { DEFAULT_LOC, validLocation, requireService, jsonResponse, errorResponse, corsHeaders } from './_utils.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  if (!authOk(request, env)) {
-    return errorResponse('unauthorized', 401);
-  }
+  const unavailable = requireService(request, env);
+  if (unavailable) return unavailable;
 
+  let data;
+  try { data = await request.json(); } catch { return errorResponse('bad json'); }
+  if (!validLocation(data, true)) return errorResponse('invalid location');
   try {
-    const data = await request.json();
-    let current = DEFAULT_LOC;
-
-    if (env.SPOOFER_DATA) {
-      current = await env.SPOOFER_DATA.get('loc', { type: 'json' }) || DEFAULT_LOC;
+    const stored = await env.SPOOFER_DATA.get('loc', { type: 'json' });
+    if (!stored && (!Object.hasOwn(data, 'latitude') || !Object.hasOwn(data, 'longitude'))) {
+      return errorResponse('initial location requires latitude and longitude');
     }
-
+    const current = stored || DEFAULT_LOC;
     const updated = { ...current };
-    if (typeof data.latitude           === 'number') updated.latitude           = data.latitude;
-    if (typeof data.longitude          === 'number') updated.longitude          = data.longitude;
-    if (typeof data.altitude           === 'number') updated.altitude           = data.altitude;
-    if (typeof data.horizontalAccuracy === 'number') updated.horizontalAccuracy = data.horizontalAccuracy;
-    if (typeof data.verticalAccuracy   === 'number') updated.verticalAccuracy   = data.verticalAccuracy;
-
-    if (env.SPOOFER_DATA) {
-      await env.SPOOFER_DATA.put('loc', JSON.stringify(updated));
+    for (const key of Object.keys(DEFAULT_LOC)) {
+      if (Object.hasOwn(data, key)) updated[key] = data[key];
     }
-
+    if (!validLocation(updated)) return errorResponse('invalid stored location', 503);
+    await env.SPOOFER_DATA.put('loc', JSON.stringify(updated));
     return jsonResponse(updated);
-  } catch (err) {
-    return errorResponse('bad json');
+  } catch {
+    return errorResponse('storage unavailable', 503);
   }
 }
 
