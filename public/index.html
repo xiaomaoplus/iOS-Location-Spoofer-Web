@@ -1236,7 +1236,8 @@ function scheduleElevation(){
 
 /* ─── Map center → WGS-84 ────────────────────────────────── */
 function onMapMove(){
-  var c=map.getCenter();
+  // Leaflet world copies can report longitudes outside [-180, 180].
+  var c=map.getCenter().wrap();
   var w=(currentLayer==='osm'||currentLayer==='esri')?[c.lat,c.lng]:GCJ.g2w(c.lat,c.lng);
   WGS={lat:w[0],lng:w[1]};
   updateBubble();
@@ -1288,7 +1289,7 @@ function initMap(lat,lng){
 /* ─── Layer switching ────────────────────────────────────── */
 function switchLayer(name){
   if(name===currentLayer)return;
-  var c=map.getCenter();
+  var c=map.getCenter().wrap();
   // Convert current display coords → WGS-84 → new display coords
   var wgs=(currentLayer==='osm'||currentLayer==='esri')?[c.lat,c.lng]:GCJ.g2w(c.lat,c.lng);
   var newDisp=(name==='osm'||name==='esri')?wgs:GCJ.w2g(wgs[0],wgs[1]);
