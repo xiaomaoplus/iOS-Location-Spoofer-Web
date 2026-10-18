@@ -6,14 +6,13 @@
  * ⚠️【特别声明】：本项目完全免费开源，严禁以任何形式进行二次售卖、转售、商业收费代搭建！
  */
 
-import { authOk, jsonResponse, errorResponse, corsHeaders } from './_utils.js';
+import { requireService, jsonResponse, errorResponse, corsHeaders } from './_utils.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
 
-  if (!authOk(request, env)) {
-    return errorResponse('unauthorized', 401);
-  }
+  const unavailable = requireService(request, env);
+  if (unavailable) return unavailable;
 
   return jsonResponse({ ok: true });
 }

@@ -17,7 +17,29 @@ export const DEFAULT_LOC = {
 export function authOk(request, env) {
   const url = new URL(request.url);
   const token = url.searchParams.get('token');
-  return !env.TOKEN || token === env.TOKEN;
+  return typeof env.TOKEN === 'string' && env.TOKEN.length > 0 && token === env.TOKEN;
+}
+
+export function requireService(request, env) {
+  if (!env.TOKEN) return errorResponse('TOKEN not configured', 503);
+  if (!authOk(request, env)) return errorResponse('unauthorized', 401);
+  if (!env.SPOOFER_DATA) return errorResponse('storage not configured', 503);
+  return null;
+}
+
+export function validLocation(data, partial = false) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  const keys = Object.keys(DEFAULT_LOC);
+  if (partial && !keys.some(key => Object.hasOwn(data, key))) return false;
+  return keys.every(key => {
+    if (partial && !Object.hasOwn(data, key)) return true;
+    const value = data[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+    if (key === 'latitude') return Math.abs(value) <= 90;
+    if (key === 'longitude') return Math.abs(value) <= 180;
+    if (key.endsWith('Accuracy')) return value > 0;
+    return true;
+  });
 }
 
 export function jsonResponse(data, status = 200) {
