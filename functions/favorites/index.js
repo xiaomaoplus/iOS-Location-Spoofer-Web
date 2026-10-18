@@ -6,39 +6,48 @@
  * ⚠️【特别声明】：本项目完全免费开源，严禁以任何形式进行二次售卖、转售、商业收费代搭建！
  */
 
-import { authOk, jsonResponse, errorResponse, corsHeaders } from '../_utils.js';
+import { DEFAULT_LOC, validLocation, requireService, jsonResponse, errorResponse, corsHeaders } from '../_utils.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
 
-  if (!authOk(request, env)) {
-    return errorResponse('unauthorized', 401);
-  }
+  const unavailable = requireService(request, env);
+  if (unavailable) return unavailable;
 
-  let favs = [];
-  if (env.SPOOFER_DATA) {
-    favs = await env.SPOOFER_DATA.get('favorites', { type: 'json' }) || [];
+  try {
+    const favs = await env.SPOOFER_DATA.get('favorites', { type: 'json' }) || [];
+    if (!Array.isArray(favs)) return errorResponse('invalid stored favorites', 503);
+    return jsonResponse(favs);
+  } catch {
+    return errorResponse('storage unavailable', 503);
   }
-
-  return jsonResponse(favs);
 }
 
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  if (!authOk(request, env)) {
-    return errorResponse('unauthorized', 401);
-  }
+  const unavailable = requireService(request, env);
+  if (unavailable) return unavailable;
 
+  let data;
+  try { data = await request.json(); } catch { return errorResponse('bad json'); }
+  if (!data || typeof data !== 'object' || Array.isArray(data) ||
+      typeof data.latitude !== 'number' || typeof data.longitude !== 'number' ||
+      (data.name != null && typeof data.name !== 'string')) return errorResponse('invalid favorite');
+  const location = { ...DEFAULT_LOC };
+  for (const key of Object.keys(DEFAULT_LOC)) {
+    if (data[key] != null) location[key] = data[key];
+  }
+  if (!validLocation(location)) return errorResponse('invalid location');
   try {
-    const data = await request.json();
     let favs = [];
     if (env.SPOOFER_DATA) {
       favs = await env.SPOOFER_DATA.get('favorites', { type: 'json' }) || [];
     }
 
+    if (!Array.isArray(favs)) return errorResponse('invalid stored favorites', 503);
     const fav = {
-      id:                 Date.now().toString(36),
+      id:                 crypto.randomUUID(),
       name:               (data.name || '未命名').slice(0, 30),
       latitude:           data.latitude,
       longitude:          data.longitude,
@@ -57,7 +66,7 @@ export async function onRequestPost(context) {
 
     return jsonResponse(fav);
   } catch (err) {
-    return errorResponse('bad json');
+    return errorResponse('storage unavailable', 503);
   }
 }
 

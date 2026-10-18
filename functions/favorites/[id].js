@@ -6,24 +6,25 @@
  * ⚠️【特别声明】：本项目完全免费开源，严禁以任何形式进行二次售卖、转售、商业收费代搭建！
  */
 
-import { authOk, jsonResponse, errorResponse, corsHeaders } from '../_utils.js';
+import { requireService, jsonResponse, errorResponse, corsHeaders } from '../_utils.js';
 
 export async function onRequestDelete(context) {
   const { request, env, params } = context;
 
-  if (!authOk(request, env)) {
-    return errorResponse('unauthorized', 401);
-  }
+  const unavailable = requireService(request, env);
+  if (unavailable) return unavailable;
 
   const id = params.id;
   
-  if (env.SPOOFER_DATA) {
+  try {
     let favs = await env.SPOOFER_DATA.get('favorites', { type: 'json' }) || [];
+    if (!Array.isArray(favs)) return errorResponse('invalid stored favorites', 503);
     favs = favs.filter(f => f.id !== id);
     await env.SPOOFER_DATA.put('favorites', JSON.stringify(favs));
+    return jsonResponse({ ok: true });
+  } catch {
+    return errorResponse('storage unavailable', 503);
   }
-
-  return jsonResponse({ ok: true });
 }
 
 export async function onRequestOptions() {
