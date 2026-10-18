@@ -212,6 +212,23 @@ test('favorites validate inputs and report failed writes', async () => {
   assert.equal((await call('favorites/[id].js', 'DELETE', undefined, env)).status, 503);
 });
 
+test('legacy location defaults optional metadata without changing coordinates or KV', async () => {
+  const kv = storage(), env = { TOKEN: 'test', SPOOFER_DATA: kv };
+  const original = JSON.stringify({ latitude: 0, longitude: -30, horizontalAccuracy: 0, altitude: null });
+  kv.map.set('loc', original);
+  const response = await call('loc.json.js', 'GET', undefined, env);
+  assert.equal(response.status, 200);
+  const loc = await response.json();
+  assert.equal(loc.latitude, 0);
+  assert.equal(loc.longitude, -30);
+  assert.equal(loc.horizontalAccuracy, 39);
+  assert.equal(loc.verticalAccuracy, 1000);
+  assert.equal(kv.map.get('loc'), original);
+  assert.equal((await call('set.js', 'POST', { altitude: 0 }, env)).status, 200);
+  kv.map.set('loc', JSON.stringify({ latitude: 999, longitude: 0 }));
+  assert.equal((await call('loc.json.js', 'GET', undefined, env)).status, 503);
+});
+
 test('module token is encoded literally and response cannot be cached', async () => {
   const token = '$&\n&other=true';
   const env = { TOKEN: token, SPOOFER_DATA: storage(),
