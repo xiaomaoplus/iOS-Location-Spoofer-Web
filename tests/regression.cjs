@@ -291,3 +291,23 @@ test('search escaping, Esri favorite coordinates and zero-coordinate init are re
   assert(html.includes('WGS={lat:d.latitude,lng:d.longitude}'));
   assert(!html.includes('updateLockedPin(39.90872,116.39748)'));
 });
+
+test('map panning wraps world-copy longitude before saving or converting coordinates', () => {
+  const move = html.slice(html.indexOf('function onMapMove(){'), html.indexOf('/* ─── Map setup'));
+  let conversions = 0;
+  const ctx = vm.createContext({
+    map: { getCenter: () => ({ lat: 10, lng: 476, wrap: () => ({ lat: 10, lng: 116 }) }) },
+    currentLayer: 'osm', WGS: null,
+    GCJ: { g2w: (lat, lng) => { assert.equal(lng, 116); conversions++; return [lat, lng]; } },
+    updateBubble() {}, updateStatus() {}, scheduleElevation() {}, updateFavStar() {}
+  });
+  vm.runInContext(move, ctx);
+  ctx.onMapMove();
+  assert.equal(ctx.WGS.lng, 116);
+  ctx.currentLayer = 'amap';
+  ctx.onMapMove();
+  assert.equal(conversions, 1);
+  assert.equal(ctx.WGS.lng, 116);
+  const changeLayer = html.slice(html.indexOf('function switchLayer(name)'), html.indexOf('/* ─── Search'));
+  assert(changeLayer.includes('map.getCenter().wrap()'));
+});
